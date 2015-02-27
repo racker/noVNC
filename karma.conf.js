@@ -188,7 +188,10 @@ module.exports = function(config) {
     my_conf.captureTimeout = 0; // use SL timeout
     my_conf.sauceLabs = {
       testName: 'noVNC Tests (all)',
-      startConnect: false,
+      startConnect: true,
+      connectOptions: {
+        tunnelIdentifier: process.env.TRAVIS_JOB_NUMBER
+      },
       tunnelIdentifier: process.env.TRAVIS_JOB_NUMBER
     };
   }
