@@ -1,6 +1,7 @@
 /*
  * noVNC: HTML5 VNC client
  * Copyright (C) 2012 Joel Martin
+ * Copyright (C) 2015 Samuel Mannehed for Cendio AB
  * Licensed under MPL 2.0 (see LICENSE.txt)
  *
  * See README.md for usage and integration instructions.
@@ -23,6 +24,10 @@ var Display;
         // the full frame buffer (logical canvas) size
         this._fb_width = 0;
         this._fb_height = 0;
+
+        // the limit for the viewport
+        this._maxWidth = 0;
+        this._maxHeight= 0;
 
         // the visible "physical canvas" viewport
         this._viewportLoc = { 'x': 0, 'y': 0, 'w': 0, 'h': 0 };
@@ -201,53 +206,48 @@ var Display;
         },
 
         viewportChangeSize: function(width, height) {
-
-            if (!this._viewport ||
-                typeof(width) === "undefined" || typeof(height) === "undefined") {
-
-                Util.Debug("Setting viewport to full display region");
-                width = this._fb_width;
-                height = this._fb_height;
-            }
-
             var vp = this._viewportLoc;
             if (vp.w !== width || vp.h !== height) {
 
-                var cr = this._cleanRect;
+                var limitedViewport = this._maxWidth != 0 && this._maxHeight != 0;
 
+                if (this._viewport && limitedViewport) {
+                    if (width > this._maxWidth) {
+                        width = this._maxWidth;
+                    }
+                    if (height > this._maxHeight) {
+                        height = this._maxHeight;
+                    }
+                }
+
+                var cr = this._cleanRect;
                 if (width < vp.w &&  cr.x2 > vp.x + width - 1) {
                     cr.x2 = vp.x + width - 1;
                 }
-
                 if (height < vp.h &&  cr.y2 > vp.y + height - 1) {
                     cr.y2 = vp.y + height - 1;
                 }
 
-                if (this.fbuClip()) {
-                    // clipping
-                    vp.w = window.innerWidth;
-                    var cb = document.getElementById('noVNC-control-bar');
-                    var controlbar_h = (cb !== null) ? cb.offsetHeight : 0;
-                    vp.h = window.innerHeight - controlbar_h - 5;
-                } else {
-                    // scrollbars
-                    vp.w = width;
-                    vp.h = height;
-                }
+                vp.w = width;
+                vp.h = height;
 
-                var saveImg = null;
                 var canvas = this._target;
-                if (vp.w > 0 && vp.h > 0 && canvas.width > 0 && canvas.height > 0) {
-                    var img_width = canvas.width < vp.w ? canvas.width : vp.w;
-                    var img_height = canvas.height < vp.h ? canvas.height : vp.h;
-                    saveImg = this._drawCtx.getImageData(0, 0, img_width, img_height);
-                }
+                if (canvas.width !== width || canvas.height !== height) {
 
-                canvas.width = vp.w;
-                canvas.height = vp.h;
+                    // We have to save the canvas data since changing the size will clear it
+                    var saveImg = null;
+                    if (vp.w > 0 && vp.h > 0 && canvas.width > 0 && canvas.height > 0) {
+                        var img_width = canvas.width < vp.w ? canvas.width : vp.w;
+                        var img_height = canvas.height < vp.h ? canvas.height : vp.h;
+                        saveImg = this._drawCtx.getImageData(0, 0, img_width, img_height);
+                    }
 
-                if (saveImg) {
-                    this._drawCtx.putImageData(saveImg, 0, 0);
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    if (saveImg) {
+                        this._drawCtx.putImageData(saveImg, 0, 0);
+                    }
                 }
             }
         },
@@ -317,7 +317,7 @@ var Display;
 
             this._rescale(this._scale);
 
-            this.viewportChangeSize();
+            this.viewportChangeSize(width, height);
         },
 
         clear: function () {
@@ -487,12 +487,18 @@ var Display;
             this._target.style.cursor = "none";
         },
 
-        fbuClip: function () {
-            var cb = document.getElementById('noVNC-control-bar');
-            var controlbar_h = (cb !== null) ? cb.offsetHeight : 0;
-            return (this._viewport &&
-                    (this._fb_width > window.innerWidth
-                     || this._fb_height > window.innerHeight - controlbar_h - 5));
+        clippingDisplay: function () {
+            var vp = this._viewportLoc;
+            var fbClip = this._fb_width > vp.w || this._fb_height > vp.h;
+            var limitedVp = this._maxWidth != 0 && this._maxHeight != 0;
+            var clipping = vp.w > this._maxWidth || vp.h > this._maxHeight;
+            return fbClip || (limitedVp && clipping);
+        },
+
+        // A width or height of zero means no limit
+        setViewportLimit: function(width, height) {
+            this._maxWidth = width;
+            this._maxHeight = height;
         },
 
         // Overridden getters/setters

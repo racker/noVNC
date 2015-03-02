@@ -1,7 +1,7 @@
 /*
  * noVNC: HTML5 VNC client
  * Copyright (C) 2012 Joel Martin
- * Copyright (C) 2013 Samuel Mannehed for Cendio AB
+ * Copyright (C) 2015 Samuel Mannehed for Cendio AB
  * Licensed under MPL 2.0 (see LICENSE.txt)
  *
  * See README.md for usage and integration instructions.
@@ -43,19 +43,6 @@ var UI;
         // UI.init to setup the UI/menus
         load: function (callback) {
             WebUtil.initSettings(UI.start, callback);
-        },
-
-        onresize: function (callback) {
-            if (UI.getSetting('resize')) {
-                var innerW = window.innerWidth;
-                var innerH = window.innerHeight;
-                var controlbarH = $D('noVNC-control-bar').offsetHeight;
-                // For some unknown reason the container is higher than the canvas,
-                // 5px higher in Firefox and 4px higher in Chrome
-                var padding = 5;
-                if (innerW !== undefined && innerH !== undefined)
-                    UI.rfb.setDesktopSize(innerW, innerH - controlbarH - padding);
-            }
         },
 
         // Render default UI and initialize settings menu
@@ -149,14 +136,9 @@ var UI;
             UI.setViewClip();
 
             Util.addEvent(window, 'resize', function () {
+                UI.updateViewDragButton();
                 UI.setViewClip();
-                // When the window has been resized, wait until the size remains
-                // the same for 0.5 seconds before sending the request for changing
-                // the resolution of the session
-                clearTimeout(resizeTimeout);
-                resizeTimeout = setTimeout(function(){
-                    UI.onresize();
-                }, 500);
+                UI.onresize();
             } );
 
             Util.addEvent(window, 'load', UI.keyboardinputReset);
@@ -237,6 +219,43 @@ var UI;
             $D("noVNC_apply").onclick = UI.settingsApply;
 
             $D("noVNC_connect_button").onclick = UI.connect;
+        },
+
+        onresize: function (callback) {
+            if (UI.getSetting('resize') && UI.rfb_state === 'normal') {
+                var canvas = $D('noVNC_canvas');
+                var container = $D('noVNC_container');
+
+                // When the window has been resized, wait until the size remains
+                // the same for 0.5 seconds before sending the request for changing
+                // the resolution of the session
+                clearTimeout(resizeTimeout);
+                resizeTimeout = setTimeout(function(){
+                    var size = UI.setMaxCanvasSize();
+                    if (size) {
+                        UI.rfb.setDesktopSize(size['w'], size['h']);
+                    }
+                }, 500);
+            }
+        },
+
+        setMaxCanvasSize: function () {
+            var container = $D('noVNC_container');
+
+            // Hide the scrollbars until the size is calculated
+            container.style.overflow = "hidden";
+
+            var w = parseInt(window.getComputedStyle(container).width);
+            var h = parseInt(window.getComputedStyle(container).height);
+
+            container.style.overflow = "auto";
+
+            if (isNaN(w) || isNaN(h)) {
+                return false;
+            } else {
+                UI.rfb.get_display().setViewportLimit(w,h);
+                return {w: w, h: h};
+            }
         },
 
         // Read form control compatible setting from cookie
@@ -588,6 +607,7 @@ var UI;
                     break;
                 case 'disconnected':
                     $D('noVNC_logo').style.display = "block";
+                    $D('noVNC_container').style.display = "none";
                     /* falls through */
                 case 'loaded':
                     klass = "noVNC_status_normal";
@@ -742,6 +762,7 @@ var UI;
             //Close dialog.
             setTimeout(UI.setBarPosition, 100);
             $D('noVNC_logo').style.display = "none";
+            $D('noVNC_container').style.display = "inline";
         },
 
         disconnect: function() {
@@ -752,6 +773,8 @@ var UI;
             UI.rfb.set_onFBUComplete(UI.FBUComplete);
 
             $D('noVNC_logo').style.display = "block";
+            $D('noVNC_container').style.display = "none";
+
             // Don't display the connection settings until we're actually disconnected
         },
 
@@ -786,12 +809,12 @@ var UI;
                 return;
             }
 
-            var cur_clip = display.get_viewport();
-
             if (typeof(clip) !== 'boolean') {
                 // Use current setting
                 clip = UI.getSetting('clip');
             }
+
+            var cur_clip = display.get_viewport();
 
             if (clip && !cur_clip) {
                 // Turn clipping on
@@ -800,17 +823,15 @@ var UI;
                 // Turn clipping off
                 UI.updateSetting('clip', false);
                 display.set_viewport(false);
-                $D('noVNC_canvas').style.position = 'static';
-                display.viewportChangeSize();
+                UI.rfb.get_display().setViewportLimit(0,0);
             }
+            // If clipping, update clipping settings
             if (UI.getSetting('clip')) {
-                // If clipping, update clipping settings
-                $D('noVNC_canvas').style.position = 'absolute';
-                var pos = Util.getPosition($D('noVNC_canvas'));
-                var new_w = window.innerWidth - pos.x;
-                var new_h = window.innerHeight - pos.y;
                 display.set_viewport(true);
-                display.viewportChangeSize(new_w, new_h);
+                var size = UI.setMaxCanvasSize();
+                if (size) {
+                    display.viewportChangeSize(size['w'], size['h']);
+                }
             }
         },
 
@@ -839,7 +860,7 @@ var UI;
             var vmb = $D('noVNC_view_drag_button');
             if (UI.rfb_state === 'normal' &&
                 UI.rfb.get_display().get_viewport() &&
-                UI.rfb.get_display().fbuClip()) {
+                UI.rfb.get_display().clippingDisplay()) {
                 vmb.style.display = "inline";
             } else {
                 vmb.style.display = "none";
