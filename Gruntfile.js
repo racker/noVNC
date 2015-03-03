@@ -18,10 +18,22 @@ module.exports = function(grunt) {
         ],
         dest: 'dist/novnc.js',
       }
+    },
+    uglify: {
+      options: {
+        compress: false,
+        preserveComments: true
+      },
+      my_target: {
+        files: {
+          'dist/novnc.min.js': [ 'dist/novnc.js' ]
+        }
+      }
     }
   });
 
   grunt.loadNpmTasks('grunt-contrib-concat');
+  grunt.loadNpmTasks('grunt-contrib-uglify');
 
- grunt.registerTask('js:build', [ 'concat' ]);
+ grunt.registerTask('default', [ 'concat', 'uglify' ]);
 };
